@@ -1,0 +1,13 @@
+---
+description: Development rules and standards for mcp-server-web-audit
+globs: ["src/**/*.ts", "tests/**/*.ts"]
+alwaysApply: true
+---
+
+# Development Rules for mcp-server-web-audit
+
+1. **Stdio Safety**: Under no circumstances write raw output to stdout (`console.log`). The MCP SDK controls stdout. Use the `logger` from `src/logger.ts` which outputs to stderr.
+2. **SSRF Guard**: Always validate incoming URLs using `validateAuditUrl(url)`. Never make external requests to private IP ranges or loopback addresses.
+3. **TypeScript Discipline**: Strict mode is enabled. Explicitly type function returns and arguments. Avoid `any`.
+4. **Architectural Separation**: Keep engines (`src/engines/`) decoupled from tool handlers (`src/tools/`). Engines should operate on parsed HTML/headers/results.
+5. **Testing**: Add unit tests in `tests/unit/` for any new parser, validator, or engine rule.

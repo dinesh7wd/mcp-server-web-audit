@@ -1,0 +1,8 @@
+# Cursor Rules for mcp-server-web-audit
+
+- Always use strict TypeScript mode
+- Never write to stdout directly; only write logs to stderr (console.error or pino)
+- Every exported function must include JSDoc comments
+- Keep functions under 40 lines and files under 300 lines
+- Ensure SSRF validation is applied to all incoming URLs
+- Run `pnpm test` and `pnpm typecheck` before committing changes
