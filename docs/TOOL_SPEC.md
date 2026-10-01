@@ -33,7 +33,7 @@ All tools are registered via `McpServer.registerTool` with:
 | `audit_full` | Full Website Audit | Category scores + weighted overall |
 
 ## 1. `audit_seo`
-Checks title and meta description length (30–60 / 70–160 chars), indexability (robots / googlebot meta and `X-Robots-Tag`: `noindex`/`none` is a failure, `nofollow` a warning), canonical (resolved against the final URL; missing, invalid, multiple or mismatched), H1 count, Open Graph tags, Twitter card (informational), hreflang codes, and `<html lang>`.
+Checks title and meta description length (30–60 / 70–160 chars), indexability (robots / googlebot meta and `X-Robots-Tag`: `noindex`/`none` is a failure, `nofollow` a warning; header directives scoped to a crawler other than Googlebot, e.g. `otherbot: noindex`, are ignored), canonical (resolved against the final URL; missing, invalid, multiple or mismatched), H1 count, Open Graph tags, Twitter card (informational), hreflang codes, and `<html lang>`.
 
 ## 2. `audit_security`
 Works on any response type. Checks:
@@ -42,7 +42,7 @@ Works on any response type. Checks:
 - HSTS: missing, invalid, `max-age=0`, or shorter than 1 year; reports `includeSubDomains` / `preload`.
 - CSP: missing, report-only only, no `script-src`/`default-src`, `'unsafe-inline'`/`'unsafe-eval'`/`*`/scheme sources, `object-src` and `base-uri`.
 - Clickjacking: `frame-ancestors` directive, or `X-Frame-Options` `DENY`/`SAMEORIGIN`.
-- `X-Content-Type-Options: nosniff`, Referrer-Policy (flags `unsafe-url`), Permissions-Policy (informational).
+- `X-Content-Type-Options: nosniff`, Referrer-Policy (flags `unsafe-url`), Permissions-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy (informational, no score impact).
 - Cookies across all redirect hops: `SameSite=None` without `Secure`, missing `Secure`/`HttpOnly`/`SameSite`. The total cookie penalty is capped.
 
 ## 3. `audit_tracking`

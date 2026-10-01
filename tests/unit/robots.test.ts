@@ -4,9 +4,11 @@ import {
   clearRobotsCache,
   getRobotsRules,
   isAllowedByRobots,
+  MAX_ROBOTS_PATTERN_LENGTH,
   parseRobotsTxt,
   pathAllowed,
   productToken,
+  robotsPatternMatches,
 } from '../../src/robots.js';
 import { TestServer, startTestServer, testPolicy } from '../helpers.js';
 
@@ -42,6 +44,39 @@ Disallow: /private # comment
     expect(pathAllowed('/files/report.pdf?download=1', rules)).toBe(true);
     expect(pathAllowed('/search?lang=en&q=test', rules)).toBe(false);
     expect(pathAllowed('/', 'disallow-all')).toBe(false);
+  });
+
+  it('glob matcher agrees with a regex reference on wildcard and anchor edge cases', () => {
+    const reference = (pattern: string, path: string) => {
+      const anchored = pattern.endsWith('$');
+      const body = (anchored ? pattern.slice(0, -1) : pattern)
+        .split('*')
+        .map((p) => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*');
+      return new RegExp(`^${body}${anchored ? '$' : ''}`).test(path);
+    };
+    const patterns = ['/', '/a', '/a$', '/*', '/*$', '/*.pdf$', '/a*b', '/a*b$', '/**b', '/a*a*a$', '*', '$', '/x*', '/fish*.php', '/$'];
+    const paths = ['/', '/a', '/ab', '/aab', '/ba', '/a/b/c.pdf', '/a.pdf?x', '/aaa', '/fish/salmon.php', '/fishheads.php?id=1', '/x', ''];
+    for (const pattern of patterns) {
+      for (const path of paths) {
+        expect(robotsPatternMatches(pattern, path), `${pattern} vs ${path}`).toBe(reference(pattern, path));
+      }
+    }
+  });
+
+  it('stays fast on hostile wildcard patterns (no catastrophic backtracking)', () => {
+    const hostile = `User-agent: *\n${Array.from({ length: 2000 }, () => `Disallow: /${'*a'.repeat(50)}*b$`).join('\n')}`;
+    const rules = parseRobotsTxt(hostile, UA);
+    const start = Date.now();
+    expect(pathAllowed(`/${'a'.repeat(2000)}`, rules)).toBe(true);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  it('caps pattern length without loosening restrictions', () => {
+    const long = `/${'x'.repeat(MAX_ROBOTS_PATTERN_LENGTH + 100)}`;
+    const rules = parseRobotsTxt(`User-agent: *\nDisallow: ${long}$\nAllow: ${long}y`, UA);
+    expect(rules).toEqual([{ allow: false, pattern: long.slice(0, MAX_ROBOTS_PATTERN_LENGTH) }]);
+    expect(pathAllowed(`${long}zzz`, rules)).toBe(false);
   });
 
   it('treats empty Disallow as allow-all and extracts product tokens', () => {

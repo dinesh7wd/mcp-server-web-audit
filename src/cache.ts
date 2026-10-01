@@ -5,6 +5,31 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
+interface Inflight<T> {
+  promise: Promise<T>;
+  controller: AbortController;
+  waiters: number;
+}
+
+function waitFor<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    if (signal.aborted) return onAbort();
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (v) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(v);
+      },
+      (e: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(e);
+      },
+    );
+  });
+}
+
 /**
  * Builds a cache key from a prefix and URL, ignoring the fragment.
  * @param prefix Namespace (e.g. "seo")
@@ -22,7 +47,7 @@ export function cacheKeyFor(prefix: string, url: URL): string {
  */
 export class MemoryCache<T> {
   private cache = new Map<string, CacheEntry<T>>();
-  private inflight = new Map<string, Promise<T>>();
+  private inflight = new Map<string, Inflight<T>>();
   private ttlMs: number;
   private maxEntries: number;
 
@@ -75,31 +100,51 @@ export class MemoryCache<T> {
   }
 
   /**
-   * Returns a cached value or computes it once, sharing the pending promise with concurrent callers.
+   * Returns a cached value or computes it once, sharing the pending work with concurrent callers.
+   * The shared work gets its own abort signal: one caller cancelling only stops that caller's wait,
+   * and the work is aborted only once every waiting caller has cancelled.
    * @param key Cache key
-   * @param compute Producer
+   * @param compute Producer; must honour the signal it is given (not a caller's signal)
    * @param shouldCache Predicate deciding whether a computed value is stored
+   * @param signal This caller's abort signal
    * @returns Value plus whether it came from cache
    */
   async getOrCompute(
     key: string,
-    compute: () => Promise<T>,
+    compute: (signal: AbortSignal) => Promise<T>,
     shouldCache: (value: T) => boolean = () => true,
+    signal?: AbortSignal,
   ): Promise<{ value: T; cached: boolean }> {
     const hit = this.get(key);
     if (hit !== undefined) return { value: hit, cached: true };
+    signal?.throwIfAborted();
 
-    const pending = this.inflight.get(key);
-    if (pending) return { value: await pending, cached: false };
+    let entry = this.inflight.get(key);
+    if (!entry) {
+      const controller = new AbortController();
+      const created: Inflight<T> = {
+        controller,
+        waiters: 0,
+        promise: compute(controller.signal)
+          .then((value) => {
+            if (shouldCache(value)) this.set(key, value);
+            return value;
+          })
+          .finally(() => {
+            if (this.inflight.get(key) === created) this.inflight.delete(key);
+          }),
+      };
+      created.promise.catch(() => undefined);
+      this.inflight.set(key, created);
+      entry = created;
+    }
 
-    const promise = compute();
-    this.inflight.set(key, promise);
+    entry.waiters += 1;
     try {
-      const value = await promise;
-      if (shouldCache(value)) this.set(key, value);
-      return { value, cached: false };
+      return { value: await waitFor(entry.promise, signal), cached: false };
     } finally {
-      this.inflight.delete(key);
+      entry.waiters -= 1;
+      if (entry.waiters === 0 && signal?.aborted) entry.controller.abort(signal.reason);
     }
   }
 

@@ -214,11 +214,16 @@ export function createPageAuditTool<R>(def: PageAuditDefinition<R>): AuditTool {
     handler: (args, extra) =>
       runAudit(def.label, args.url, extra, async (signal) => {
         const url = await validateTarget(args.url, signal);
-        const { value, cached } = await auditCache.getOrCompute(cacheKeyFor(def.cachePrefix, url), async () => {
-          const target = await fetchTarget(url, signal);
-          if (def.requiresHtml && !isHtmlResponse(target)) throw notHtmlError(target);
-          return def.run(target, () => parseHtml(target.body));
-        });
+        const { value, cached } = await auditCache.getOrCompute(
+          cacheKeyFor(def.cachePrefix, url),
+          async (shared) => {
+            const target = await fetchTarget(url, shared);
+            if (def.requiresHtml && !isHtmlResponse(target)) throw notHtmlError(target);
+            return def.run(target, () => parseHtml(target.body));
+          },
+          undefined,
+          signal,
+        );
         return renderResult(value as R, cached, args.format, def.toMarkdown);
       }),
   };

@@ -56,6 +56,58 @@ describe('MemoryCache', () => {
     await expect(cache.getOrCompute('err', async () => Promise.reject(new Error('x')))).rejects.toThrow('x');
   });
 
+  it('one caller aborting does not cancel the shared work for other callers', async () => {
+    const cache = new MemoryCache<number>(10000, 10);
+    let sharedSignal: AbortSignal | undefined;
+    const compute = vi.fn(async (signal: AbortSignal) => {
+      sharedSignal = signal;
+      await new Promise((r) => setTimeout(r, 20));
+      signal.throwIfAborted();
+      return 7;
+    });
+    const first = new AbortController();
+    const a = cache.getOrCompute('k', compute, undefined, first.signal);
+    const b = cache.getOrCompute('k', compute, undefined, new AbortController().signal);
+    first.abort(new Error('client went away'));
+    await expect(a).rejects.toThrow('client went away');
+    await expect(b).resolves.toEqual({ value: 7, cached: false });
+    expect(compute).toHaveBeenCalledTimes(1);
+    expect(sharedSignal?.aborted).toBe(false);
+    expect(cache.get('k')).toBe(7);
+  });
+
+  it('aborts the shared work once every waiting caller has aborted', async () => {
+    const cache = new MemoryCache<number>(10000, 10);
+    let sharedSignal: AbortSignal | undefined;
+    const compute = (signal: AbortSignal) => {
+      sharedSignal = signal;
+      return new Promise<number>((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+    };
+    const c1 = new AbortController();
+    const c2 = new AbortController();
+    const a = cache.getOrCompute('k', compute, undefined, c1.signal);
+    const b = cache.getOrCompute('k', compute, undefined, c2.signal);
+    c1.abort(new Error('one'));
+    await expect(a).rejects.toThrow('one');
+    expect(sharedSignal?.aborted).toBe(false);
+    c2.abort(new Error('two'));
+    await expect(b).rejects.toThrow('two');
+    expect(sharedSignal?.aborted).toBe(true);
+
+    await new Promise((r) => setTimeout(r, 0));
+    const fresh = await cache.getOrCompute('k', async () => 3);
+    expect(fresh).toEqual({ value: 3, cached: false });
+  });
+
+  it('rejects immediately for an already-aborted caller without starting work', async () => {
+    const cache = new MemoryCache<number>(10000, 10);
+    const compute = vi.fn(async () => 1);
+    const c = new AbortController();
+    c.abort(new Error('gone'));
+    await expect(cache.getOrCompute('k', compute, undefined, c.signal)).rejects.toThrow('gone');
+    expect(compute).not.toHaveBeenCalled();
+  });
+
   it('clears all items', () => {
     const cache = new MemoryCache<string>(1000, 10);
     cache.set('x', '1');

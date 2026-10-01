@@ -10,7 +10,7 @@ A **Model Context Protocol (MCP)** server that lets AI agents (Cursor, Claude De
 All tools are read-only (a single `GET` of the page the user asked for) and analyse the static HTML and response headers:
 
 - 🔍 **SEO**: title/description length, indexability (robots meta + `X-Robots-Tag`), canonical (resolved), H1, Open Graph, Twitter cards, hreflang, `lang`.
-- 🛡️ **Security**: HTTPS, HSTS (parsed `max-age`), CSP (enforced vs report-only, unsafe script sources), clickjacking (`frame-ancestors` / `X-Frame-Options`), `nosniff`, Referrer-Policy, Permissions-Policy, cookie flags across redirect hops.
+- 🛡️ **Security**: HTTPS, HSTS (parsed `max-age`), CSP (enforced vs report-only, unsafe script sources), clickjacking (`frame-ancestors` / `X-Frame-Options`), `nosniff`, Referrer-Policy, Permissions-Policy, COOP/CORP (informational), cookie flags across redirect hops.
 - 📊 **Tracking**: GA4, GTM, Meta Pixel, TikTok, LinkedIn, Hotjar, Clarity; flags multiple IDs for the same tracker.
 - ♿ **Accessibility**: image alt text (decorative images excluded), form labels, landmarks, heading-level skips, `lang`.
 - ⚡ **Performance**: TTFB, decompressed HTML size, compression, Cache-Control, plus optional Chrome UX Report (CrUX) field data. No headless browser is used.
@@ -101,7 +101,7 @@ Put a TLS-terminating reverse proxy in front of any non-local deployment.
 | Tool | Description |
 |---|---|
 | `audit_seo` | Title/description, indexability, canonical, H1, Open Graph, Twitter, hreflang, language |
-| `audit_security` | HTTPS, HSTS, CSP, clickjacking, nosniff, Referrer-Policy, Permissions-Policy, cookies |
+| `audit_security` | HTTPS, HSTS, CSP, clickjacking, nosniff, Referrer-Policy, Permissions-Policy, COOP/CORP, cookies |
 | `audit_tracking` | GA4, GTM, Meta Pixel, TikTok, LinkedIn, Hotjar, Clarity; multiple-ID detection |
 | `audit_accessibility` | Image alt, form labels, landmarks, heading skips, language |
 | `audit_performance` | TTFB, HTML size, compression, caching, optional CrUX LCP/INP/CLS |

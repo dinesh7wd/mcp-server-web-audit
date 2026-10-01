@@ -16,6 +16,12 @@ const ROBOTS_TTL_MS = 5 * 60 * 1000;
 const robotsCache = new MemoryCache<RobotsRules>(ROBOTS_TTL_MS, 500);
 
 /**
+ * Longer Disallow patterns are cut to a prefix (a broader, stricter match); longer Allow
+ * patterns are dropped. Keeps matching cost bounded without ever loosening a restriction.
+ */
+export const MAX_ROBOTS_PATTERN_LENGTH = 512;
+
+/**
  * Returns the lower-cased product token of a User-Agent string (e.g. "mcp-server-web-audit").
  * @param userAgent Full User-Agent
  * @returns Product token
@@ -51,7 +57,10 @@ export function parseRobotsTxt(body: string, userAgent: string): RobotsRule[] {
       current.agents.push(value.toLowerCase());
       lastWasAgent = true;
     } else if (current && (key === 'allow' || key === 'disallow')) {
-      if (value) current.rules.push({ allow: key === 'allow', pattern: value });
+      const allow = key === 'allow';
+      if (value && (!allow || value.length <= MAX_ROBOTS_PATTERN_LENGTH)) {
+        current.rules.push({ allow, pattern: value.slice(0, MAX_ROBOTS_PATTERN_LENGTH) });
+      }
       lastWasAgent = false;
     } else {
       lastWasAgent = false;
@@ -64,13 +73,32 @@ export function parseRobotsTxt(body: string, userAgent: string): RobotsRule[] {
   return chosen.flatMap((g) => g.rules);
 }
 
-function patternToRegExp(pattern: string): RegExp {
+/**
+ * Matches a robots.txt path pattern (`*` wildcard, trailing `$` anchor) without regular
+ * expressions: literal segments are located left to right with indexOf, so the cost is
+ * linear in path + pattern length and hostile patterns cannot cause catastrophic backtracking.
+ * @param pattern Allow/Disallow value
+ * @param path Path plus query string
+ * @returns true when the pattern matches from the start of the path
+ */
+export function robotsPatternMatches(pattern: string, path: string): boolean {
   const anchored = pattern.endsWith('$');
-  const body = (anchored ? pattern.slice(0, -1) : pattern)
-    .split('*')
-    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-    .join('.*');
-  return new RegExp(`^${body}${anchored ? '$' : ''}`);
+  const segments = (anchored ? pattern.slice(0, -1) : pattern).split('*');
+  const first = segments[0]!;
+  if (!path.startsWith(first)) return false;
+  if (segments.length === 1) return !anchored || path.length === first.length;
+
+  let pos = first.length;
+  for (let i = 1; i < segments.length - 1; i++) {
+    const seg = segments[i]!;
+    if (!seg) continue;
+    const idx = path.indexOf(seg, pos);
+    if (idx === -1) return false;
+    pos = idx + seg.length;
+  }
+  const last = segments[segments.length - 1]!;
+  if (!anchored) return !last || path.indexOf(last, pos) !== -1;
+  return path.length - last.length >= pos && path.endsWith(last);
 }
 
 /**
@@ -85,7 +113,7 @@ export function pathAllowed(pathWithQuery: string, rules: RobotsRules): boolean 
   if (path === '/robots.txt') return true;
   let best: RobotsRule | undefined;
   for (const rule of rules) {
-    if (!patternToRegExp(rule.pattern).test(path)) continue;
+    if (!robotsPatternMatches(rule.pattern, path)) continue;
     if (!best || rule.pattern.length > best.pattern.length || (rule.pattern.length === best.pattern.length && rule.allow)) {
       best = rule;
     }

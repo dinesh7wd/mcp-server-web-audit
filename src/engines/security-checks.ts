@@ -303,6 +303,31 @@ function checkMimeAndReferrer(headers: Record<string, string>, items: AuditItem[
       : 'Permissions-Policy is not set; browser feature defaults apply.',
     recommendation: permissions ? undefined : 'Consider disabling unused features, e.g. Permissions-Policy: camera=(), microphone=(), geolocation=().',
   });
+
+  const coop = headers['cross-origin-opener-policy']?.trim();
+  const coopIsolated = !!coop && /^same-origin(-allow-popups)?\b/i.test(coop);
+  items.push({
+    id: coopIsolated ? 'sec-coop-ok' : 'sec-coop-missing',
+    title: coopIsolated ? 'Cross-Origin-Opener-Policy Configured' : 'No Isolating Cross-Origin-Opener-Policy',
+    status: coopIsolated ? 'pass' : 'info',
+    description: coopIsolated
+      ? `Cross-Origin-Opener-Policy is "${coop}", isolating the browsing context from cross-origin openers.`
+      : coop
+        ? `Cross-Origin-Opener-Policy is "${coop}", which does not isolate the window from cross-origin pages.`
+        : 'Cross-Origin-Opener-Policy is not set; cross-origin windows can keep a reference to this page.',
+    recommendation: coopIsolated ? undefined : 'Consider Cross-Origin-Opener-Policy: same-origin (or same-origin-allow-popups if you rely on OAuth/payment popups).',
+  });
+
+  const corp = headers['cross-origin-resource-policy']?.trim();
+  items.push({
+    id: corp ? 'sec-corp-ok' : 'sec-corp-missing',
+    title: corp ? 'Cross-Origin-Resource-Policy Configured' : 'No Cross-Origin-Resource-Policy',
+    status: corp ? 'pass' : 'info',
+    description: corp
+      ? `Cross-Origin-Resource-Policy is "${corp}".`
+      : 'Cross-Origin-Resource-Policy is not set; other origins may embed this response.',
+    recommendation: corp ? undefined : 'Consider Cross-Origin-Resource-Policy: same-origin (or same-site) for responses that should not be embedded cross-origin.',
+  });
   return penalty;
 }
 

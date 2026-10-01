@@ -137,11 +137,11 @@ export const auditFullTool: AuditTool = {
       const progress = createProgressReporter(extra, 3);
       const { value, cached } = await auditCache.getOrCompute(
         cacheKeyFor('full', url),
-        async () => {
+        async (shared) => {
           await progress(0, 'Fetching page');
           const [target, fieldData] = await Promise.all([
-            fetchTarget(url, signal),
-            fetchCruxMetrics(url.href, { signal }),
+            fetchTarget(url, shared),
+            fetchCruxMetrics(url.href, { signal: shared }),
           ]);
           await progress(1, 'Running audit engines');
           const result = buildFullAudit(target, fieldData);
@@ -149,6 +149,7 @@ export const auditFullTool: AuditTool = {
           return result;
         },
         (result) => Object.keys((result as FullAuditResult).errors).length === 0,
+        signal,
       );
       return renderResult(value as FullAuditResult, cached, args.format, formatFullMarkdown);
     }),

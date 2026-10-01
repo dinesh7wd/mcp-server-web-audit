@@ -14,13 +14,18 @@ export const auditPerformanceTool: AuditTool = {
   handler: (args, extra) =>
     runAudit('Performance audit', args.url, extra, async (signal) => {
       const url = await validateTarget(args.url, signal);
-      const { value, cached } = await auditCache.getOrCompute(cacheKeyFor('perf', url), async () => {
-        const [target, fieldData] = await Promise.all([
-          fetchTarget(url, signal),
-          fetchCruxMetrics(url.href, { signal }),
-        ]);
-        return auditPerformance(target, fieldData);
-      });
+      const { value, cached } = await auditCache.getOrCompute(
+        cacheKeyFor('perf', url),
+        async (shared) => {
+          const [target, fieldData] = await Promise.all([
+            fetchTarget(url, shared),
+            fetchCruxMetrics(url.href, { signal: shared }),
+          ]);
+          return auditPerformance(target, fieldData);
+        },
+        undefined,
+        signal,
+      );
       return renderResult(value as PerformanceAuditResult, cached, args.format, formatPerformanceMarkdown);
     }),
 };

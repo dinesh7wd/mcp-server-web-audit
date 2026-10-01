@@ -99,6 +99,20 @@ describe('auditSecurity', () => {
     );
   });
 
+  it('reports COOP and CORP as informational without changing the score', () => {
+    const bare = auditSecurity(strongHeaders, [], 'https://a.test/');
+    expect(ids(bare.items)).toEqual(expect.arrayContaining(['sec-coop-missing', 'sec-corp-missing']));
+    const isolated = auditSecurity(
+      { ...strongHeaders, 'cross-origin-opener-policy': 'same-origin-allow-popups', 'cross-origin-resource-policy': 'same-site' },
+      [],
+      'https://a.test/',
+    );
+    expect(ids(isolated.items)).toEqual(expect.arrayContaining(['sec-coop-ok', 'sec-corp-ok']));
+    expect(isolated.score).toBe(bare.score);
+    const unsafeNone = auditSecurity({ ...strongHeaders, 'cross-origin-opener-policy': 'unsafe-none' }, [], 'https://a.test/');
+    expect(unsafeNone.items.find((i) => i.id === 'sec-coop-missing')?.description).toContain('unsafe-none');
+  });
+
   it('caps cookie penalties and flags SameSite=None without Secure (M6)', () => {
     const many: ParsedCookie[] = Array.from({ length: 40 }, (_, i) => ({ name: `c${i}"<x>`, secure: false, httpOnly: false }));
     const res = auditSecurity(strongHeaders, many, 'https://a.test/');
@@ -141,6 +155,20 @@ describe('auditSeo', () => {
     const viaMeta = auditSeo(parseHtml(`<meta name="robots" content="none">`), 'https://example.com/');
     expect(viaMeta.indexable).toBe(false);
     expect(parseRobotsDirectives(['max-snippet:50, NOINDEX'])).toEqual(new Set(['max-snippet:50', 'noindex']));
+  });
+
+  it('ignores X-Robots-Tag directives scoped to other crawlers', () => {
+    const parsed = parseHtml(`<html lang="en"><head>${goodHead}<link rel="canonical" href="https://example.com/"></head><body><h1>x</h1></body></html>`);
+    const other = auditSeo(parsed, 'https://example.com/', { 'x-robots-tag': 'otherbot: noindex, nofollow' });
+    expect(other.indexable).toBe(true);
+    expect(ids(other.items)).not.toContain('seo-noindex');
+    expect(ids(other.items)).not.toContain('seo-nofollow');
+    expect(parseRobotsDirectives(['otherbot: noindex, googlebot: nofollow, max-snippet:5'])).toEqual(
+      new Set(['nofollow', 'max-snippet:5']),
+    );
+    expect(parseRobotsDirectives(['unavailable_after: 2030-01-01, noarchive'])).toEqual(
+      new Set(['unavailable_after: 2030-01-01', 'noarchive']),
+    );
   });
 
   it('reports canonical mismatch, conflicts and invalid values', () => {

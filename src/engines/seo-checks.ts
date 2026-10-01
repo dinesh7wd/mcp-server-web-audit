@@ -9,9 +9,13 @@ export const DESCRIPTION_MAX = 160;
 
 const HREFLANG_PATTERN = /^(x-default|[a-z]{2,3}(-[a-z0-9]{2,8})*)$/i;
 
+const VALUED_DIRECTIVE = /^(max-snippet|max-image-preview|max-video-preview|unavailable_after)\s*:/;
+const PAGE_WIDE_AGENTS = new Set(['googlebot']);
+
 /**
  * Extracts robots directives from meta robots and X-Robots-Tag values.
- * Handles user-agent prefixed X-Robots-Tag values (e.g. "googlebot: noindex").
+ * A user-agent prefix ("otherbot: noindex, nofollow") scopes the directives that follow it, so only
+ * unscoped directives and those for a major crawler (Googlebot) count as page-wide.
  * @param values Raw directive strings
  * @returns Set of lower-cased directives
  */
@@ -19,11 +23,15 @@ export function parseRobotsDirectives(values: Array<string | undefined>): Set<st
   const directives = new Set<string>();
   for (const value of values) {
     if (!value) continue;
+    let agent: string | undefined;
     for (const raw of value.toLowerCase().split(',')) {
-      const token = raw.trim();
+      let token = raw.trim();
       const colon = token.indexOf(':');
-      const directive = colon > -1 && !/^(max-|unavailable_after)/.test(token) ? token.slice(colon + 1).trim() : token;
-      if (directive) directives.add(directive);
+      if (colon > -1 && !VALUED_DIRECTIVE.test(token)) {
+        agent = token.slice(0, colon).trim();
+        token = token.slice(colon + 1).trim();
+      }
+      if (token && (agent === undefined || PAGE_WIDE_AGENTS.has(agent))) directives.add(token);
     }
   }
   return directives;

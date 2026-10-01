@@ -80,7 +80,7 @@ Each tool is registered with `McpServer.registerTool(name, { title, description,
 ### Tool pipeline (`src/tools/common.ts`)
 1. `runAudit` creates one deadline (`AUDIT_TOTAL_TIMEOUT_MS`) combined with the client's abort signal.
 2. `validateTarget` checks the scheme, credentials, domain policy and SSRF (DNS included, under the deadline).
-3. `auditCache.getOrCompute` serves from cache or de-duplicates concurrent identical calls.
+3. `auditCache.getOrCompute` serves from cache or de-duplicates concurrent identical calls. The shared fetch runs on the cache's own abort signal: a caller that cancels only stops its own wait, and the fetch is aborted only when every waiting caller has cancelled (or timed out).
 4. `fetchTarget` checks robots.txt when `RESPECT_ROBOTS_TXT=true`, then calls `safeFetch`. Status ≥ 400 → `HTTP_ERROR`.
 5. HTML engines require an HTML response (`NOT_HTML` otherwise). The security audit works on any response.
 6. `renderResult` produces Markdown or JSON. Errors become `isError: true` results with a code.
