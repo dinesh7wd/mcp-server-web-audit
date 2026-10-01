@@ -50,8 +50,7 @@ export function calculateOverall(scores: Partial<Record<AuditCategory, number>>)
 
 function describeEngineError(err: unknown): string {
   if (err instanceof AppError) return err.toClientMessage();
-  const message = err instanceof Error ? err.message : String(err);
-  return `${ErrorCodes.InternalError}: Engine error: ${message.slice(0, 200)}`;
+  return `${ErrorCodes.InternalError}: This audit engine failed; details are in the server logs.`;
 }
 
 /**

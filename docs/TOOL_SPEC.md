@@ -46,7 +46,12 @@ Works on any response type. Checks:
 - Cookies across all redirect hops: `SameSite=None` without `Secure`, missing `Secure`/`HttpOnly`/`SameSite`. The total cookie penalty is capped.
 
 ## 3. `audit_tracking`
-Detects GA4, GTM, Meta Pixel, TikTok Pixel, LinkedIn Insight Tag, Hotjar and Microsoft Clarity in static HTML and extracts IDs. Multiple IDs for the same tracker produce a warning. Tags injected at runtime (e.g. through GTM) are not visible.
+Detects GA4, GTM, Meta Pixel, TikTok Pixel, LinkedIn Insight Tag, Hotjar and Microsoft Clarity in static HTML and extracts IDs. Tags injected at runtime (e.g. through GTM) are not visible. The score drops for:
+
+- Multiple IDs for the same tracker.
+- Ad or heatmap trackers with no recognisable consent manager (Cookiebot, OneTrust, CookieYes, Usercentrics, Didomi, iubenda, Osano, Termly, Quantcast Choice, Complianz, Klaro) or Google Consent Mode default.
+- More than 4 different trackers.
+- Tracker scripts loaded without `async`/`defer` (render-blocking).
 
 ## 4. `audit_accessibility`
 Static checks:
@@ -54,7 +59,7 @@ Static checks:
 - Image `alt` (images with `alt=""`, `role="presentation"`/`"none"` or `aria-hidden="true"` count as decorative).
 - Form control labels (`<label for>`, wrapping label, `aria-label`, non-empty `aria-labelledby`, `title`; hidden/submit/button/reset/image inputs excluded).
 - `main` and `nav` landmarks.
-- Every skipped heading level.
+- Heading order: the first heading should be `<h1>`, and each skipped level counts (h1 → h4 is 2 skipped levels).
 - `<html lang>`.
 
 No colour-contrast or rendered-DOM checks.

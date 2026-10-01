@@ -120,6 +120,7 @@ See [.env.example](.env.example). Highlights:
 - `RESPECT_ROBOTS_TXT` (default `false`): when `true`, the target's `robots.txt` is checked (RFC 9309) before auditing and disallowed paths return `ROBOTS_DISALLOWED`. It is off by default because this is a user-directed single-page auditor, not a crawler.
 - `CRUX_API_KEY`: enables CrUX field data (sent via the `X-Goog-Api-Key` header, never in URLs or logs).
 - `AUDIT_ALLOWED_DOMAINS` / `AUDIT_BLOCKED_DOMAINS`: domain policies (subdomains included).
+- `AUDIT_ALLOWED_PORTS`: ports audits and redirects may target (default `80,443,8080,8443`; `*` = any).
 - `AUDIT_CACHE_TTL_MS` (default 5 min; `0` disables) / `AUDIT_CACHE_MAX_ENTRIES`.
 
 ---

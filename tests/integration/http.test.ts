@@ -136,6 +136,23 @@ describe('HTTP rate limiting', () => {
       await close(server);
     }
   });
+
+  it('caps total traffic even when X-Forwarded-For rotates (M5)', async () => {
+    const { server, port } = await start({ rateLimitMax: 1, authFailMax: 100, trustProxy: true });
+    try {
+      const attempt = (i: number) =>
+        rawRequest(port, {
+          method: 'POST',
+          path: '/mcp',
+          headers: { Host: `127.0.0.1:${port}`, 'X-Forwarded-For': `203.0.113.${i}` },
+          body: INIT,
+        });
+      for (let i = 1; i <= 10; i++) expect((await attempt(i)).status).toBe(401);
+      expect((await attempt(11)).status).toBe(429);
+    } finally {
+      await close(server);
+    }
+  });
 });
 
 describe('HTTP helpers', () => {
@@ -144,6 +161,10 @@ describe('HTTP helpers', () => {
     expect(isValidBearer(`Bearer ${TOKEN}x`, TOKEN)).toBe(false);
     expect(isValidBearer(undefined, TOKEN)).toBe(false);
     expect(isValidBearer('Bearer ', '')).toBe(false);
+    expect(isValidBearer(`bearer ${TOKEN}`, TOKEN)).toBe(true);
+    expect(isValidBearer(`BEARER  ${TOKEN}`, TOKEN)).toBe(true);
+    expect(isValidBearer(`Basic ${TOKEN}`, TOKEN)).toBe(false);
+    expect(isValidBearer(TOKEN, TOKEN)).toBe(false);
   });
 
   it('refuses to start with weak or incomplete configuration', async () => {

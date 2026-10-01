@@ -212,9 +212,19 @@ describe('auditA11y', () => {
     expect(res.formInputsWithoutLabel).toBe(1);
     expect(res.hasMainLandmark).toBe(true);
     expect(res.hasNavLandmark).toBe(false);
-    expect(res.headingSkips).toBe(2);
+    expect(res.headingSkips).toBe(3);
     expect(res.headingOrderValid).toBe(false);
     expect(ids(res.items)).toEqual(expect.arrayContaining(['a11y-nav-missing', 'a11y-heading-order-skipped']));
+  });
+
+  it('counts skipped levels, not transitions, and requires the first heading to be h1', () => {
+    const jump = auditA11y(parseHtml('<html lang="en"><body><main><h1>T</h1><h6>Deep</h6></main></body></html>'), 'https://example.com/');
+    expect(jump.headingSkips).toBe(4);
+
+    const noH1 = auditA11y(parseHtml('<html lang="en"><body><main><h3>A</h3><h3>B</h3></main></body></html>'), 'https://example.com/');
+    expect(noH1.headingSkips).toBe(2);
+    expect(noH1.headingOrderValid).toBe(false);
+    expect(noH1.items.find((i) => i.id === 'a11y-heading-order-skipped')?.description).toContain('first heading is h3');
   });
 
   it('passes a clean page', () => {
@@ -241,7 +251,7 @@ describe('auditTracking', () => {
   });
 
   it('does not treat CSS classes or reCAPTCHA as GA4 IDs (H6 regression)', () => {
-    const html = `<script src="https://www.googletagmanager.com/gtag/js?id=G-ABC123"></script>
+    const html = `<script async src="https://www.googletagmanager.com/gtag/js?id=G-ABC123"></script>
       <script>gtag('config','G-ABC123'); var c = "img-fluid"; grecaptcha.render('x', { class: 'g-recaptcha' }); var tag = "GTM-lowercase";</script>`;
     const res = auditTracking(parseHtml(html), 'https://x.test');
     expect(res.detectedTrackers.map((t) => t.name)).toEqual(['Google Analytics 4 (GA4)']);
@@ -264,6 +274,41 @@ describe('auditTracking', () => {
       ['Google Tag Manager (GTM)', ['GTM-ABCD12']],
       ['Meta / Facebook Pixel', ['123456789012345']],
     ]);
+  });
+
+  it('scores tracker hygiene: consent, stack size and render-blocking tags (M2)', () => {
+    const pixel = `<script async src="https://connect.facebook.net/en_US/fbevents.js"></script><script>fbq('init','123456789012345');</script>`;
+    const noConsent = auditTracking(parseHtml(pixel), 'https://x.test');
+    expect(ids(noConsent.items)).toContain('tracking-no-consent-manager');
+    expect(noConsent.score).toBe(80);
+
+    const withCmp = auditTracking(
+      parseHtml(`<script src="https://consent.cookiebot.com/uc.js" async></script>${pixel}`),
+      'https://x.test',
+    );
+    expect(ids(withCmp.items)).not.toContain('tracking-no-consent-manager');
+    expect(withCmp.score).toBe(100);
+
+    const blocking = auditTracking(
+      parseHtml(`<script src="https://www.googletagmanager.com/gtag/js?id=G-ABC123"></script>`),
+      'https://x.test',
+    );
+    expect(ids(blocking.items)).toContain('tracking-blocking-scripts');
+    expect(blocking.score).toBe(95);
+
+    const heavy = auditTracking(
+      parseHtml(`<script async src="https://consent.cookiebot.com/uc.js"></script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-ABC123"></script>
+        <script>(function(){})(window,document,'script','dataLayer','GTM-ABCD12');</script>
+        ${pixel}
+        <script async src="https://analytics.tiktok.com/i18n/pixel/events.js"></script>
+        <script async src="https://snap.licdn.com/li.lms-analytics/insight.min.js"></script>
+        <script async src="https://www.clarity.ms/tag/abc"></script>`),
+      'https://x.test',
+    );
+    expect(heavy.detectedTrackers.length).toBe(6);
+    expect(ids(heavy.items)).toContain('tracking-heavy-stack');
+    expect(heavy.score).toBe(90);
   });
 
   it('slugs tracker names for item ids', () => {

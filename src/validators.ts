@@ -54,6 +54,17 @@ export function sanitizeUrl(raw: string): URL | null {
   }
 }
 
+/**
+ * Returns true when the URL's effective port is in AUDIT_ALLOWED_PORTS.
+ * @param url Parsed http(s) URL
+ * @returns boolean
+ */
+export function isAllowedPort(url: URL, allowed: number[] | 'any' = CONFIG.security.allowedPorts): boolean {
+  if (allowed === 'any') return true;
+  const port = url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80;
+  return allowed.includes(port);
+}
+
 function matchesDomainList(url: URL, list: string[]): boolean {
   const host = normalizeHostname(url.hostname);
   return list.some((d) => host === d || host.endsWith('.' + d));
@@ -106,7 +117,12 @@ export function validateAuditUrlSync(rawUrl: string): UrlValidation {
   if (!policy.valid) return policy;
   if (isLocalhost(policy.url.hostname)) return invalid(ErrorCodes.SSRF_BLOCKED, SSRF_LOCALHOST);
   if (isPrivateIP(policy.url.hostname)) return invalid(ErrorCodes.SSRF_BLOCKED, SSRF_PRIVATE);
-  return policy;
+  return checkPort(policy.url) ?? policy;
+}
+
+function checkPort(url: URL): UrlValidation | undefined {
+  if (isAllowedPort(url)) return undefined;
+  return invalid(ErrorCodes.PolicyBlocked, `Port ${url.port} is not in the configured AUDIT_ALLOWED_PORTS.`);
 }
 
 /**
@@ -163,5 +179,5 @@ export async function validateAuditUrl(
     if (err instanceof AppError) return invalid(err.code, err.message);
     return invalid(ErrorCodes.SSRF_BLOCKED, 'DNS validation failed');
   }
-  return policy;
+  return checkPort(policy.url) ?? policy;
 }

@@ -13,6 +13,8 @@ export interface RobotsRule {
 export type RobotsRules = RobotsRule[] | 'disallow-all';
 
 const ROBOTS_TTL_MS = 5 * 60 * 1000;
+/** A 5xx or network failure may be transient, so the resulting disallow-all is only cached briefly. */
+export const ROBOTS_FAILURE_TTL_MS = 30 * 1000;
 const robotsCache = new MemoryCache<RobotsRules>(ROBOTS_TTL_MS, 500);
 
 /**
@@ -123,7 +125,8 @@ export function pathAllowed(pathWithQuery: string, rules: RobotsRules): boolean 
 
 /**
  * Fetches and caches robots.txt for an origin through the SSRF-safe fetcher.
- * 4xx means no restrictions; 5xx or unreachable means full disallow (RFC 9309 §2.3.1).
+ * 4xx means no restrictions; 5xx or unreachable means full disallow (RFC 9309 §2.3.1), cached only
+ * for ROBOTS_FAILURE_TTL_MS. A robots.txt above the size limit is treated as full disallow (fail closed).
  */
 export async function getRobotsRules(
   originUrl: string,
@@ -134,6 +137,7 @@ export async function getRobotsRules(
   if (cached) return cached;
 
   let rules: RobotsRules;
+  let ttlMs = ROBOTS_TTL_MS;
   try {
     const res = await safeFetch(`${origin}/robots.txt`, {
       accept: 'text/plain,*/*;q=0.1',
@@ -147,20 +151,22 @@ export async function getRobotsRules(
       rules = [];
     } else {
       rules = 'disallow-all';
+      ttlMs = ROBOTS_FAILURE_TTL_MS;
     }
   } catch (err) {
     if (options.signal?.aborted) throw err;
+    rules = 'disallow-all';
     if (err instanceof AppError && err.code === ErrorCodes.ResponseTooLarge) {
-      rules = [];
+      logWarn('robots.txt exceeds the size limit; treating as full disallow', { origin });
     } else {
       logWarn('robots.txt unreachable; treating as full disallow', {
         origin,
         error: err instanceof AppError ? err.code : 'unknown',
       });
-      rules = 'disallow-all';
+      ttlMs = ROBOTS_FAILURE_TTL_MS;
     }
   }
-  robotsCache.set(origin, rules);
+  robotsCache.set(origin, rules, ttlMs);
   return rules;
 }
 

@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { MIN_AUTH_TOKEN_LENGTH, isLoopbackBindHost, loadConfig, parseNumber } from '../../src/config.js';
+import {
+  DEFAULT_ALLOWED_PORTS,
+  MIN_AUTH_TOKEN_LENGTH,
+  isLoopbackBindHost,
+  loadConfig,
+  parseNumber,
+  parsePorts,
+} from '../../src/config.js';
 
 const TOKEN = 'x'.repeat(MIN_AUTH_TOKEN_LENGTH);
 
 describe('config', () => {
+  it('parses AUDIT_ALLOWED_PORTS (M6)', () => {
+    expect(parsePorts(undefined)).toEqual(DEFAULT_ALLOWED_PORTS);
+    expect(parsePorts('443, 8443')).toEqual([443, 8443]);
+    expect(parsePorts('*')).toBe('any');
+    expect(() => parsePorts('443,abc')).toThrow(/AUDIT_ALLOWED_PORTS/);
+    expect(() => parsePorts('70000')).toThrow(/AUDIT_ALLOWED_PORTS/);
+  });
+
   it('applies defaults', () => {
     const cfg = loadConfig({});
     expect(cfg.transport).toBe('stdio');

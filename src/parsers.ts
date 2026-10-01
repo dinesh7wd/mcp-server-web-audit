@@ -7,6 +7,13 @@ export interface ParsedImage {
   decorative: boolean;
 }
 
+export interface ParsedScript {
+  src?: string;
+  inline?: string;
+  /** External script without async, defer or type="module" (blocks HTML parsing). */
+  blocking?: boolean;
+}
+
 export interface ParsedFormInput {
   type?: string;
   id?: string;
@@ -26,7 +33,7 @@ export interface ParsedHtml {
   openGraph: Record<string, string>;
   twitterCard: Record<string, string>;
   hreflang: Array<{ lang: string; href: string }>;
-  scripts: Array<{ src?: string; inline?: string }>;
+  scripts: ParsedScript[];
   images: ParsedImage[];
   formInputs: ParsedFormInput[];
   landmarks: {
@@ -130,10 +137,14 @@ function extractImages($: cheerio.CheerioAPI): ParsedImage[] {
   return images;
 }
 
-function extractScripts($: cheerio.CheerioAPI): Array<{ src?: string; inline?: string }> {
-  const scripts: Array<{ src?: string; inline?: string }> = [];
+function extractScripts($: cheerio.CheerioAPI): ParsedScript[] {
+  const scripts: ParsedScript[] = [];
   $('script').each((_, el) => {
-    scripts.push({ src: $(el).attr('src'), inline: $(el).html() || undefined });
+    const $el = $(el);
+    const src = $el.attr('src');
+    const isModule = ($el.attr('type') || '').trim().toLowerCase() === 'module';
+    const blocking = Boolean(src) && $el.attr('async') === undefined && $el.attr('defer') === undefined && !isModule;
+    scripts.push({ src, inline: $el.html() || undefined, blocking });
   });
   return scripts;
 }
@@ -209,13 +220,19 @@ export function parseCookies(setCookies: string[]): ParsedCookie[] {
     if (!parts[0]) continue;
     const eqIdx = parts[0].indexOf('=');
     const name = (eqIdx > -1 ? parts[0].substring(0, eqIdx) : parts[0]).trim();
-    const flags = parts.slice(1).map((p) => p.toLowerCase());
-    const sameSiteFlag = flags.find((f) => f.startsWith('samesite='));
+    const attributes = parts.slice(1).map((p) => {
+      const idx = p.indexOf('=');
+      const key = (idx > -1 ? p.slice(0, idx) : p).trim().toLowerCase();
+      const value = idx > -1 ? p.slice(idx + 1).trim().replace(/^"(.*)"$/, '$1').trim().toLowerCase() : '';
+      return { key, value };
+    });
+    const has = (key: string) => attributes.some((a) => a.key === key);
+    const sameSite = attributes.find((a) => a.key === 'samesite')?.value;
     cookies.push({
       name,
-      secure: flags.includes('secure'),
-      httpOnly: flags.includes('httponly'),
-      sameSite: sameSiteFlag ? sameSiteFlag.split('=')[1]?.trim() : undefined,
+      secure: has('secure'),
+      httpOnly: has('httponly'),
+      sameSite: sameSite || undefined,
     });
   }
   return cookies;

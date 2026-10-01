@@ -55,23 +55,32 @@ function auditHeadings(
   headings: Array<{ level: number; text: string }>,
   items: AuditItem[],
 ): { penalty: number; skips: number } {
-  const skips: string[] = [];
+  const gaps: string[] = [];
+  let missingLevels = 0;
+  const first = headings[0]?.level;
+  if (first !== undefined && first > 1) {
+    missingLevels += first - 1;
+    gaps.push(`first heading is h${first}`);
+  }
   for (let i = 0; i < headings.length - 1; i++) {
     const current = headings[i].level;
     const next = headings[i + 1].level;
-    if (next > current + 1) skips.push(`h${current} → h${next}`);
+    if (next > current + 1) {
+      missingLevels += next - current - 1;
+      gaps.push(`h${current} → h${next}`);
+    }
   }
 
-  if (skips.length > 0) {
-    const shown = skips.slice(0, 10).join(', ');
+  if (missingLevels > 0) {
+    const shown = gaps.slice(0, 10).join(', ');
     items.push({
       id: 'a11y-heading-order-skipped',
       title: 'Skipped Heading Levels Detected',
       status: 'warn',
-      description: `${skips.length} heading level skip(s): ${shown}${skips.length > 10 ? ', …' : ''}.`,
-      recommendation: 'Maintain a sequential heading hierarchy without skipping levels (e.g. h1 → h2 → h3).',
+      description: `${missingLevels} skipped heading level(s): ${shown}${gaps.length > 10 ? ', …' : ''}.`,
+      recommendation: 'Start with an <h1> and keep a sequential heading hierarchy without skipping levels (e.g. h1 → h2 → h3).',
     });
-    return { penalty: Math.min(20, skips.length * 5), skips: skips.length };
+    return { penalty: Math.min(20, missingLevels * 5), skips: missingLevels };
   }
   if (headings.length > 0) {
     items.push({

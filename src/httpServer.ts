@@ -32,7 +32,8 @@ function digest(value: string): Buffer {
  */
 export function isValidBearer(header: string | undefined, token: string): boolean {
   if (typeof header !== 'string' || !token) return false;
-  return timingSafeEqual(digest(header), digest(`Bearer ${token}`));
+  const match = /^bearer[ \t]+(\S+)[ \t]*$/i.exec(header);
+  return timingSafeEqual(digest(match ? match[1] : ''), digest(token));
 }
 
 /**
@@ -64,9 +65,17 @@ function originGuard(allowedOrigins: string[]) {
   };
 }
 
-function rateLimit(limiter: RateLimiter) {
+/**
+ * Every client also counts against one shared bucket, so rotating source addresses (or spoofed
+ * X-Forwarded-For values behind a misconfigured TRUST_PROXY) cannot multiply the request budget.
+ */
+const GLOBAL_RATE_MULTIPLIER = 10;
+const GLOBAL_KEY = 'global';
+
+function rateLimit(limiter: RateLimiter, globalLimiter: RateLimiter) {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
+      globalLimiter.check(GLOBAL_KEY);
       limiter.check(`ip:${clientIp(req)}`);
       next();
     } catch (err) {
@@ -76,15 +85,16 @@ function rateLimit(limiter: RateLimiter) {
   };
 }
 
-function requireBearer(token: string, failures: RateLimiter) {
+function requireBearer(token: string, failures: RateLimiter, globalFailures: RateLimiter) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const key = `ip:${clientIp(req)}`;
-    if (failures.isLimited(key)) {
+    if (failures.isLimited(key) || globalFailures.isLimited(GLOBAL_KEY)) {
       jsonRpcError(res, 429, -32029, `${ErrorCodes.RateLimited}: Too many failed authentication attempts`);
       return;
     }
     if (!isValidBearer(req.headers.authorization, token)) {
       try {
+        globalFailures.check(GLOBAL_KEY);
         failures.check(key);
       } catch {
         logWarn('Authentication failure limit reached', { ip: clientIp(req) });
@@ -116,8 +126,8 @@ async function handleMcpPost(req: Request, res: Response): Promise<void> {
   const server = createMcpServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on('close', () => {
-    void transport.close();
-    void server.close();
+    transport.close().catch((e: unknown) => logWarn('MCP transport close failed', { error: String(e) }));
+    server.close().catch((e: unknown) => logWarn('MCP server close failed', { error: String(e) }));
   });
   try {
     await server.connect(transport);
@@ -142,6 +152,8 @@ export function createHttpApp(http: HttpConfig): Express {
 
   const requestLimiter = new RateLimiter(http.rateLimitWindowMs, http.rateLimitMax);
   const authFailureLimiter = new RateLimiter(http.rateLimitWindowMs, http.authFailMax);
+  const globalRequestLimiter = new RateLimiter(http.rateLimitWindowMs, http.rateLimitMax * GLOBAL_RATE_MULTIPLIER);
+  const globalAuthFailureLimiter = new RateLimiter(http.rateLimitWindowMs, http.authFailMax * GLOBAL_RATE_MULTIPLIER);
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -151,8 +163,8 @@ export function createHttpApp(http: HttpConfig): Express {
     '/mcp',
     hostHeaderValidation(http.allowedHosts),
     originGuard(http.allowedOrigins),
-    rateLimit(requestLimiter),
-    requireBearer(http.authToken, authFailureLimiter),
+    rateLimit(requestLimiter, globalRequestLimiter),
+    requireBearer(http.authToken, authFailureLimiter, globalAuthFailureLimiter),
     express.json({ limit: http.bodyLimit }),
   );
 

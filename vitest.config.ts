@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],
-    env: { LOG_LEVEL: 'silent' },
+    env: { LOG_LEVEL: 'silent', AUDIT_ALLOWED_PORTS: '*' },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'html'],

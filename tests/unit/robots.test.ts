@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../../src/config.js';
 import {
+  ROBOTS_FAILURE_TTL_MS,
   clearRobotsCache,
   getRobotsRules,
   isAllowedByRobots,
@@ -87,7 +88,7 @@ Disallow: /private # comment
 
 describe('robots fetching', () => {
   let server: TestServer;
-  let mode: 'rules' | 'missing' | 'error' | 'redirect-private' = 'rules';
+  let mode: 'rules' | 'missing' | 'error' | 'redirect-private' | 'huge' = 'rules';
   let hits = 0;
   const originalUa = CONFIG.network.userAgent;
 
@@ -104,6 +105,9 @@ describe('robots fetching', () => {
       } else if (mode === 'error') {
         res.writeHead(503);
         res.end();
+      } else if (mode === 'huge') {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end(`User-agent: *\nDisallow: /private\n${'#'.repeat(CONFIG.network.robotsMaxSizeBytes)}`);
       } else {
         res.writeHead(302, { Location: 'http://internal.test/robots.txt' });
         res.end();
@@ -136,6 +140,25 @@ describe('robots fetching', () => {
     clearRobotsCache();
     mode = 'error';
     expect(await getRobotsRules(server.url('/'), opts())).toBe('disallow-all');
+  });
+
+  it('treats an oversized robots.txt as disallow-all instead of allow-all', async () => {
+    mode = 'huge';
+    expect(await getRobotsRules(server.url('/'), opts())).toBe('disallow-all');
+  });
+
+  it('caches 5xx disallow-all only briefly so a transient failure does not stick', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      mode = 'error';
+      expect(await getRobotsRules(server.url('/'), opts())).toBe('disallow-all');
+      mode = 'rules';
+      expect(await getRobotsRules(server.url('/'), opts())).toBe('disallow-all');
+      vi.setSystemTime(Date.now() + ROBOTS_FAILURE_TTL_MS + 1);
+      expect(await getRobotsRules(server.url('/'), opts())).not.toBe('disallow-all');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('treats unreachable robots.txt (incl. SSRF-blocked redirects) as disallow-all', async () => {

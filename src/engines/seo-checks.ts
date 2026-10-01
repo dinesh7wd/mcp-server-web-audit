@@ -7,6 +7,8 @@ export const TITLE_MAX = 60;
 export const DESCRIPTION_MIN = 70;
 export const DESCRIPTION_MAX = 160;
 
+const MAX_REPORTED_H1 = 10;
+const MAX_REPORTED_H1_CHARS = 200;
 const HREFLANG_PATTERN = /^(x-default|[a-z]{2,3}(-[a-z0-9]{2,8})*)$/i;
 
 const VALUED_DIRECTIVE = /^(max-snippet|max-image-preview|max-video-preview|unavailable_after)\s*:/;
@@ -333,7 +335,7 @@ export function auditSeo(parsed: ParsedHtml, url: string, headers: Record<string
     xRobotsTag,
     indexable: indexability.indexable,
     h1Count: parsed.h1List.length,
-    h1Content: parsed.h1List,
+    h1Content: parsed.h1List.slice(0, MAX_REPORTED_H1).map((h) => h.slice(0, MAX_REPORTED_H1_CHARS)),
     openGraph: parsed.openGraph,
     twitterCard: parsed.twitterCard,
     hreflangCount: parsed.hreflang.length,

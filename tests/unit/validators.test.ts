@@ -5,6 +5,7 @@ import type { NetworkPolicy } from '../../src/types.js';
 import {
   assertPublicHost,
   defaultNetworkPolicy,
+  isAllowedPort,
   isLocalhost,
   isPrivateIP,
   normalizeHostname,
@@ -22,6 +23,32 @@ describe('validators', () => {
   afterEach(() => {
     CONFIG.security.allowedDomains.length = 0;
     CONFIG.security.blockedDomains.length = 0;
+  });
+
+  describe('port policy (M6)', () => {
+    it('allows default ports and rejects others', () => {
+      const allowed = [80, 443, 8080, 8443];
+      expect(isAllowedPort(new URL('https://example.com/'), allowed)).toBe(true);
+      expect(isAllowedPort(new URL('http://example.com/'), allowed)).toBe(true);
+      expect(isAllowedPort(new URL('https://example.com:8443/'), allowed)).toBe(true);
+      expect(isAllowedPort(new URL('http://example.com:6379/'), allowed)).toBe(false);
+      expect(isAllowedPort(new URL('http://example.com:6379/'), 'any')).toBe(true);
+    });
+
+    it('rejects disallowed ports in both validators', async () => {
+      const original = CONFIG.security.allowedPorts;
+      CONFIG.security.allowedPorts = [80, 443];
+      try {
+        expect(validateAuditUrlSync('http://example.com:22/')).toMatchObject({ valid: false, code: ErrorCodes.PolicyBlocked });
+        expect(await validateAuditUrl('http://example.com:22/', { policy: publicPolicy })).toMatchObject({
+          valid: false,
+          code: ErrorCodes.PolicyBlocked,
+        });
+        expect(validateAuditUrlSync('https://example.com/')).toMatchObject({ valid: true });
+      } finally {
+        CONFIG.security.allowedPorts = original;
+      }
+    });
   });
 
   describe('sanitizeUrl', () => {

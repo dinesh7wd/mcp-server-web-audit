@@ -107,7 +107,7 @@ export function embeddedIpv4(groups: number[]): string | null {
 /**
  * Returns true when an IP literal is private, loopback, link-local, reserved,
  * multicast, documentation, or otherwise not public unicast.
- * Non-IP input returns false; callers must resolve hostnames first.
+ * Non-IP input returns true (fail closed); callers must resolve hostnames first.
  * @param raw IP literal (brackets / zone id allowed)
  * @returns boolean
  */
@@ -115,7 +115,7 @@ export function isBlockedIp(raw: string): boolean {
   const ip = stripIpDecorations(raw);
   const family = net.isIP(ip);
   if (family === 4) return ipv4BlockList.check(ip, 'ipv4');
-  if (family !== 6) return false;
+  if (family !== 6) return true;
 
   const groups = parseIpv6Groups(ip);
   const v4 = embeddedIpv4(groups);

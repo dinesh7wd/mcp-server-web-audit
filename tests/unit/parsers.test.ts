@@ -103,5 +103,23 @@ describe('parsers', () => {
         { name: 'plain', secure: false, httpOnly: false, sameSite: undefined },
       ]);
     });
+
+    it('tolerates spaces around "=" and quoted attribute values', () => {
+      const cookies = parseCookies(['a=1; SameSite = None ; secure', 'b=2; SameSite="Lax"; HttpOnly ']);
+      expect(cookies).toEqual([
+        { name: 'a', secure: true, httpOnly: false, sameSite: 'none' },
+        { name: 'b', secure: false, httpOnly: true, sameSite: 'lax' },
+      ]);
+    });
+  });
+
+  it('marks external scripts without async/defer/module as render-blocking', () => {
+    const parsed = parseHtml(`
+      <script src="/a.js"></script>
+      <script async src="/b.js"></script>
+      <script defer src="/c.js"></script>
+      <script type="module" src="/d.js"></script>
+      <script>inline()</script>`);
+    expect(parsed.scripts.map((s) => Boolean(s.blocking))).toEqual([true, false, false, false, false]);
   });
 });

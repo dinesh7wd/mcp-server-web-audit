@@ -10,16 +10,25 @@ import {
 } from './types.js';
 
 const MAX_INLINE_LENGTH = 200;
+const MAX_LISTED_IDENTIFIERS = 10;
+const MARKDOWN_SPECIAL = /[\\`*_{}[\]()#+!<>|~]/g;
 
 /**
- * Collapses whitespace and truncates page-controlled text for safe inline Markdown.
+ * Collapses whitespace, truncates, and backslash-escapes Markdown syntax in page-controlled text, so it
+ * renders literally (no images, links, HTML or table breaks) in any Markdown client.
  * @param value Raw text
- * @param max Maximum length
+ * @param max Maximum length before escaping
  * @returns Sanitized single-line text
  */
 export function inline(value: string, max = MAX_INLINE_LENGTH): string {
-  const collapsed = value.replace(/\s+/g, ' ').replace(/`/g, "'").trim();
-  return collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed;
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  const cut = collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed;
+  return cut.replace(MARKDOWN_SPECIAL, '\\$&');
+}
+
+function listWithMore(values: string[], max = MAX_LISTED_IDENTIFIERS): string {
+  const shown = values.slice(0, max).map((v) => inline(v, 80));
+  return shown.join(', ') + (values.length > max ? ` (+${values.length - max} more)` : '');
 }
 
 function statusBadge(status: string): string {
@@ -43,7 +52,7 @@ function formatItems(items: AuditItem[]): string {
     lines.push(`- **${statusBadge(item.status)}** — **${inline(item.title)}**`);
     lines.push(`  ${inline(item.description, 400)}`);
     if (item.recommendation) {
-      lines.push(`  *Recommendation*: ${item.recommendation}`);
+      lines.push(`  *Recommendation*: ${inline(item.recommendation, 400)}`);
     }
   }
   return lines.join('\n');
@@ -52,7 +61,7 @@ function formatItems(items: AuditItem[]): string {
 function header(title: string, res: { url: string; score: number; rating: string; timestamp: string }): string[] {
   return [
     title,
-    `**URL**: ${res.url}`,
+    `**URL**: ${inline(res.url, 500)}`,
     `**Score**: **${res.score} / 100** (${res.rating.toUpperCase()})`,
     `**Timestamp**: ${res.timestamp}`,
     ``,
@@ -81,7 +90,7 @@ export function formatSecurityMarkdown(res: SecurityAuditResult): string {
     ...header(`# 🛡️ Security Audit Report`, res),
     `## Headers Overview`,
     `- **HTTPS**: ${res.isHttps ? '✅ Enabled' : '❌ Disabled'}`,
-    `- **HSTS**: ${res.hstsHeader ? `\`${inline(res.hstsHeader, 120)}\`` : '❌ Missing'}`,
+    `- **HSTS**: ${res.hstsHeader ? inline(res.hstsHeader, 120) : '❌ Missing'}`,
     `- **CSP**: ${csp}`,
     `- **X-Frame-Options**: ${res.xFrameOptions ? inline(res.xFrameOptions, 60) : '⚠️ Missing'}`,
     `- **X-Content-Type-Options**: ${res.xContentTypeOptions ? inline(res.xContentTypeOptions, 60) : '⚠️ Missing'}`,
@@ -100,7 +109,7 @@ export function formatTrackingMarkdown(res: TrackingAuditResult): string {
     res.detectedTrackers.length === 0
       ? `*(No common analytics or marketing pixels detected in static HTML)*`
       : res.detectedTrackers
-          .map((t) => `- **${t.name}** (${t.category})${t.identifiers.length ? ` — ID: ${t.identifiers.join(', ')}` : ''}`)
+          .map((t) => `- **${t.name}** (${t.category})${t.identifiers.length ? ` — ID: ${listWithMore(t.identifiers)}` : ''}`)
           .join('\n'),
     ``,
     `## Detailed Findings`,
@@ -117,7 +126,7 @@ export function formatA11yMarkdown(res: A11yAuditResult): string {
     `- **Main Landmark**: ${res.hasMainLandmark ? '✅ Present' : '⚠️ Missing'}`,
     `- **Navigation Landmark**: ${res.hasNavLandmark ? '✅ Present' : '⚠️ Missing'}`,
     `- **Language Declared**: ${res.languageDeclared ? '✅ Yes' : '❌ No'}`,
-    `- **Heading Hierarchy**: ${res.headingOrderValid ? '✅ Valid' : `⚠️ ${res.headingSkips} skip(s) detected`}`,
+    `- **Heading Hierarchy**: ${res.headingOrderValid ? '✅ Valid' : `⚠️ ${res.headingSkips} skipped level(s)`}`,
     ``,
     `## Detailed Findings`,
     formatItems(res.items),
@@ -132,7 +141,7 @@ export function formatPerformanceMarkdown(res: PerformanceAuditResult): string {
     `## Network Metrics (measured from the audit server)`,
     `- **Time to First Byte (TTFB)**: ${res.timing.ttfbMs} ms`,
     `- **HTML Payload Size (decompressed)**: ${Math.round(res.payloadSize / 1024)} KB`,
-    `- **Compression**: ${res.compression || 'None'}`,
+    `- **Compression**: ${res.compression ? inline(res.compression, 60) : 'None'}`,
     `- **Cache-Control**: ${res.cacheControl ? inline(res.cacheControl, 120) : 'None'}`,
   ];
 
@@ -185,7 +194,7 @@ export function formatFullMarkdown(res: FullAuditResult): string {
       : [];
 
   return [
-    `# 🌐 Comprehensive Web Audit: ${res.url}`,
+    `# 🌐 Comprehensive Web Audit: ${inline(res.url, 500)}`,
     `**Overall Score**: **${res.overallScore} / 100** (${res.overallRating.toUpperCase()})`,
     `**Audit Date**: ${res.timestamp}`,
     ...errorLines,

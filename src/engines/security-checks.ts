@@ -2,7 +2,7 @@ import { AuditItem, SecurityAuditResult } from '../types.js';
 import { ParsedCookie } from '../parsers.js';
 import { penaltyToScore, scoreToRating } from './scoring.js';
 
-export const HSTS_RECOMMENDED_MAX_AGE = 15_552_000; // 180 days
+export const HSTS_RECOMMENDED_MAX_AGE = 31_536_000; // 1 year
 const CSP_PENALTY_CAP = 20;
 const COOKIE_PENALTY_CAP = 20;
 const COOKIE_LIST_LIMIT = 20;
@@ -114,7 +114,7 @@ function checkTransportSecurity(isHttps: boolean, hsts: string | undefined, item
       id: 'sec-hsts-short',
       title: 'Short HSTS max-age',
       status: 'warn',
-      description: `HSTS max-age is ${info.maxAge}s (< 180 days). ${flags}.`,
+      description: `HSTS max-age is ${info.maxAge}s (< 1 year). ${flags}.`,
       recommendation,
     });
     return 8;

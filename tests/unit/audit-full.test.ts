@@ -13,7 +13,8 @@ describe('audit_full partial results (M1)', () => {
   it('returns remaining categories when one engine throws', () => {
     const result = buildFullAudit(fetchResultFixture(), null);
     expect(result.seo).toBeUndefined();
-    expect(result.errors.seo).toContain('seo engine exploded');
+    expect(result.errors.seo).toContain('InternalError');
+    expect(result.errors.seo).not.toContain('seo engine exploded');
     expect(result.security).toBeDefined();
     expect(result.tracking).toBeDefined();
     expect(result.accessibility).toBeDefined();

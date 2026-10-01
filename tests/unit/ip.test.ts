@@ -62,10 +62,15 @@ describe('ip classification', () => {
     },
   );
 
-  it('never classifies hostnames by prefix', () => {
+  it('never classifies hostnames as IP literals by prefix', () => {
     for (const host of ['fdic.gov', 'fcbarcelona.com', 'feature.com', 'febreze.com', 'fe80.example']) {
       expect(isIpLiteral(host)).toBe(false);
-      expect(isBlockedIp(host)).toBe(false);
+    }
+  });
+
+  it('fails closed for non-IP input', () => {
+    for (const value of ['fdic.gov', '', 'not an ip', '999.1.1.1']) {
+      expect(isBlockedIp(value)).toBe(true);
     }
   });
 

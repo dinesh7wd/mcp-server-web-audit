@@ -63,23 +63,96 @@ const TRACKER_DEFINITIONS: TrackerPattern[] = [
   },
 ];
 
+const CONSENT_MANAGERS: RegExp[] = [
+  /consent\.cookiebot\.com|cookiebot/i,
+  /cdn\.cookielaw\.org|onetrust|optanon/i,
+  /cookieyes|cdn-cookieyes\.com/i,
+  /usercentrics/i,
+  /didomi/i,
+  /iubenda/i,
+  /osano\.com/i,
+  /termly\.io/i,
+  /quantcast\.mgr|quantcast\.com\/choice/i,
+  /complianz|cmplz/i,
+  /klaro/i,
+  /gtag\s*\(\s*['"]consent['"]\s*,\s*['"]default['"]/,
+];
+const CONSENT_SENSITIVE: TrackerCategory[] = ['ads', 'heatmap'];
+const TRACKER_STACK_LIMIT = 4;
+const DUPLICATE_PENALTY = 15;
+const NO_CONSENT_PENALTY = 20;
+const EXTRA_TRACKER_PENALTY = 5;
+const BLOCKING_SCRIPT_PENALTY = 5;
+const MAX_STACK_PENALTY = 20;
+const MAX_BLOCKING_PENALTY = 15;
+const MAX_IDENTIFIERS = 20;
+
 function extractIds(text: string, patterns: RegExp[] = []): string[] {
   const ids = new Set<string>();
   for (const pattern of patterns) {
     for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags))) {
       if (match[1]) ids.add(match[1]);
+      if (ids.size >= MAX_IDENTIFIERS) return [...ids];
     }
   }
   return [...ids];
 }
 
+function scriptText(parsed: ParsedHtml): string {
+  return parsed.scripts.map((s) => `${s.src || ''} ${s.inline || ''}`).join('\n');
+}
+
 function scanTrackers(parsed: ParsedHtml): TrackingAuditResult['detectedTrackers'] {
-  const allScriptText = parsed.scripts.map((s) => `${s.src || ''} ${s.inline || ''}`).join('\n');
+  const allScriptText = scriptText(parsed);
   return TRACKER_DEFINITIONS.filter((def) => def.detect.some((re) => re.test(allScriptText))).map((def) => ({
     name: def.name,
     category: def.category,
     identifiers: extractIds(allScriptText, def.idExtractors),
   }));
+}
+
+function blockingTrackerScripts(parsed: ParsedHtml, detected: TrackingAuditResult['detectedTrackers']): number {
+  const defs = TRACKER_DEFINITIONS.filter((def) => detected.some((t) => t.name === def.name));
+  return parsed.scripts.filter((s) => s.blocking && s.src && defs.some((def) => def.detect.some((re) => re.test(s.src!))))
+    .length;
+}
+
+function checkTrackerHygiene(parsed: ParsedHtml, detected: TrackingAuditResult['detectedTrackers'], items: AuditItem[]): number {
+  let penalty = 0;
+  const sensitive = detected.filter((t) => CONSENT_SENSITIVE.includes(t.category));
+  const text = scriptText(parsed);
+  if (sensitive.length > 0 && !CONSENT_MANAGERS.some((re) => re.test(text))) {
+    penalty += NO_CONSENT_PENALTY;
+    items.push({
+      id: 'tracking-no-consent-manager',
+      title: 'Ad / Heatmap Trackers Without a Detectable Consent Manager',
+      status: 'warn',
+      description: `${sensitive.map((t) => t.name).join(', ')} load without a recognised consent management platform or Google Consent Mode default in the static HTML.`,
+      recommendation: 'Load advertising and session-recording tags only after consent (e.g. via a CMP or Consent Mode v2), as GDPR/ePrivacy require in many regions.',
+    });
+  }
+  if (detected.length > TRACKER_STACK_LIMIT) {
+    penalty += Math.min(MAX_STACK_PENALTY, (detected.length - TRACKER_STACK_LIMIT) * EXTRA_TRACKER_PENALTY);
+    items.push({
+      id: 'tracking-heavy-stack',
+      title: 'Many Third-Party Trackers',
+      status: 'warn',
+      description: `${detected.length} different trackers are loaded; each adds network requests, main-thread work and data-sharing obligations.`,
+      recommendation: 'Remove tags that are no longer used, or consolidate them behind a single tag manager.',
+    });
+  }
+  const blocking = blockingTrackerScripts(parsed, detected);
+  if (blocking > 0) {
+    penalty += Math.min(MAX_BLOCKING_PENALTY, blocking * BLOCKING_SCRIPT_PENALTY);
+    items.push({
+      id: 'tracking-blocking-scripts',
+      title: 'Render-Blocking Tracker Scripts',
+      status: 'warn',
+      description: `${blocking} tracker script(s) load without async or defer and block HTML parsing.`,
+      recommendation: 'Add async (or defer) to third-party tracking scripts.',
+    });
+  }
+  return penalty;
 }
 
 /**
@@ -123,7 +196,8 @@ export function auditTracking(parsed: ParsedHtml, url: string): TrackingAuditRes
     });
   }
 
-  const score = penaltyToScore(duplicates.length * 15);
+  const penalty = duplicates.length * DUPLICATE_PENALTY + checkTrackerHygiene(parsed, detected, items);
+  const score = penaltyToScore(penalty);
   return {
     url,
     timestamp: new Date().toISOString(),

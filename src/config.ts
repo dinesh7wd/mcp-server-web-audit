@@ -48,6 +48,26 @@ function parseTrustProxy(raw: string | undefined): boolean | number | string {
   return Number.isInteger(n) && n >= 0 ? n : raw.trim();
 }
 
+export const DEFAULT_ALLOWED_PORTS = [80, 443, 8080, 8443];
+
+/**
+ * Parses AUDIT_ALLOWED_PORTS: a comma-separated list of TCP ports, or "*" for any port.
+ * @param raw Env value
+ * @returns Allowed ports, or 'any'
+ */
+export function parsePorts(raw: string | undefined): number[] | 'any' {
+  const entries = parseList(raw);
+  if (entries.length === 0) return DEFAULT_ALLOWED_PORTS;
+  if (entries.includes('*')) return 'any';
+  return entries.map((entry) => {
+    const n = Number(entry);
+    if (!Number.isInteger(n) || n < 1 || n > 65_535) {
+      throw new Error(`Invalid port "${entry}" in AUDIT_ALLOWED_PORTS`);
+    }
+    return n;
+  });
+}
+
 function parseOrigins(raw: string | undefined): string[] {
   const origins: string[] = [];
   for (const entry of parseList(raw)) {
@@ -147,6 +167,7 @@ export function loadConfig(env: Env = process.env) {
     security: {
       allowedDomains: parseList(env.AUDIT_ALLOWED_DOMAINS),
       blockedDomains: parseList(env.AUDIT_BLOCKED_DOMAINS),
+      allowedPorts: parsePorts(env.AUDIT_ALLOWED_PORTS),
     },
     /**
      * Optional Chrome UX Report API key (field data). Sent via X-Goog-Api-Key header.

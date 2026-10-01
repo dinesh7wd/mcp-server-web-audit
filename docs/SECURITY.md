@@ -9,6 +9,7 @@ Implemented in `src/ip.ts`, `src/validators.ts` and `src/fetcher.ts`.
 
 - **Scheme and credentials**: only `http:` and `https:`; URLs containing `user:pass@` are rejected.
 - **Domain policy**: `AUDIT_ALLOWED_DOMAINS` / `AUDIT_BLOCKED_DOMAINS` (subdomains included).
+- **Port policy**: `AUDIT_ALLOWED_PORTS` (default `80,443,8080,8443`) stops audits and redirects from probing internal services on arbitrary ports.
 - **Names**: `localhost`, `*.localhost` and cloud metadata names (`metadata.google.internal`, `metadata.goog`) are rejected.
 - **IP literals** (including bracketed IPv6 and zone IDs) are classified directly:
   - IPv4 blocked: `0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.0.0/24`, `192.0.2/24`, `192.88.99/24`, `192.168/16`, `198.18/15`, `198.51.100/24`, `203.0.113/24`, `224/4`, `240/4`.
@@ -32,7 +33,7 @@ Implemented in `src/ip.ts`, `src/validators.ts` and `src/fetcher.ts`.
   - Binds to `HOST` (default `127.0.0.1`).
   - `Host` header validation against `MCP_ALLOWED_HOSTS` (DNS-rebinding protection). This is required for non-loopback binds.
   - `Origin` allowlist (`MCP_ALLOWED_ORIGINS`). Disallowed origins get 403, and CORS headers are only sent for allowed origins.
-  - Per-IP rate limit applied **before** authentication, plus a stricter per-IP failed-authentication limit (`AUTH_FAIL_RATE_LIMIT_MAX`). Buckets are pruned and capped.
+  - Per-IP rate limit applied **before** authentication, plus a stricter per-IP failed-authentication limit (`AUTH_FAIL_RATE_LIMIT_MAX`). Buckets are pruned and capped. A shared global bucket (10× the per-IP limits) also caps total traffic, so rotating source addresses cannot multiply the budget.
   - Bearer token of at least 32 characters, compared in constant time (SHA-256 digests + `timingSafeEqual`).
   - JSON body limit 256 KB. `GET`/`DELETE /mcp` return 405 (no sessions).
   - Set `TRUST_PROXY` behind a reverse proxy so limits key on the real client IP.
